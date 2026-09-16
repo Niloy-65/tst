@@ -34,44 +34,78 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   window.addEventListener("load", finish);
-  setTimeout(finish, 2500); // safety net — never lets mobile users get stuck waiting on slow assets
+  // PERF FIX: was 2500ms — on slow mobile connections this kept people staring
+  // at the loader way longer than needed. 1200ms safety net feels snappier
+  // while still giving fonts/images a moment to settle.
+  setTimeout(finish, 1200);
 });
 
-// 2. Cursor
-const cursor = document.querySelector('.cursor');
-const cursorDot = document.querySelector('.cursor-dot');
-if (cursor && cursorDot) {
-    document.addEventListener('mousemove', (e) => {
-        gsap.to(cursorDot, { x: e.clientX, y: e.clientY, duration: 0 });
-        gsap.to(cursor, { x: e.clientX, y: e.clientY, duration: 0.15 });
-    });
+// PERF FIX: detect once whether this is a real mouse (hover-capable, fine
+// pointer) device. Touch devices never benefit from the custom cursor or
+// the magnetic hover effect, so we skip attaching ALL of those listeners
+// entirely on mobile — this was pure wasted JS/paint work on phones before.
+const isPointerDevice = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+// 2. Cursor (Hero / About / Services all sit under this - desktop only now)
+if (isPointerDevice) {
+  const cursor = document.querySelector('.cursor');
+  const cursorDot = document.querySelector('.cursor-dot');
+  if (cursor && cursorDot) {
+      document.addEventListener('mousemove', (e) => {
+          gsap.to(cursorDot, { x: e.clientX, y: e.clientY, duration: 0 });
+          gsap.to(cursor, { x: e.clientX, y: e.clientY, duration: 0.15 });
+      });
+  }
 }
 
-// 3. Magnetic Logic
-const magneticElements = document.querySelectorAll('.magnetic');
-magneticElements.forEach(elem => {
-    elem.addEventListener('mouseenter', () => { if(cursor) cursor.classList.add('active'); });
-    elem.addEventListener('mouseleave', () => { 
-        if(cursor) cursor.classList.remove('active');
-        gsap.to(elem, { x: 0, y: 0, duration: 0.3 });
-    });
-    elem.addEventListener('mousemove', (e) => {
-        const rect = elem.getBoundingClientRect();
-        const x = (e.clientX - rect.left - rect.width / 2) * 0.4;
-        const y = (e.clientY - rect.top - rect.height / 2) * 0.4;
-        gsap.to(elem, { x: x, y: y, duration: 0.3 });
-    });
-});
+// 3. Magnetic Logic (used by Hero buttons/socials, nav links, filter/load-more btns)
+if (isPointerDevice) {
+  const cursorEl = document.querySelector('.cursor');
+  const magneticElements = document.querySelectorAll('.magnetic');
+  magneticElements.forEach(elem => {
+      elem.addEventListener('mouseenter', () => { if (cursorEl) cursorEl.classList.add('active'); });
+      elem.addEventListener('mouseleave', () => {
+          if (cursorEl) cursorEl.classList.remove('active');
+          gsap.to(elem, { x: 0, y: 0, duration: 0.3 });
+      });
+      elem.addEventListener('mousemove', (e) => {
+          const rect = elem.getBoundingClientRect();
+          const x = (e.clientX - rect.left - rect.width / 2) * 0.4;
+          const y = (e.clientY - rect.top - rect.height / 2) * 0.4;
+          gsap.to(elem, { x: x, y: y, duration: 0.3 });
+      });
+  });
+}
 
+/* ===================== SERVICES SECTION START (JS) ===================== */
 // 4. Infinite Carousel
 const track = document.querySelector('.carousel-track');
 if (track) {
     const cards = Array.from(track.children);
     cards.forEach(card => track.appendChild(card.cloneNode(true)));
-    let anim = gsap.to(track, { xPercent: -50, ease: "none", duration: 25, repeat: -1 });
-    track.addEventListener('mouseenter', () => anim.pause());
-    track.addEventListener('mouseleave', () => anim.play());
+    let carouselAnim = gsap.to(track, { xPercent: -50, ease: "none", duration: 25, repeat: -1 });
+    track.addEventListener('mouseenter', () => carouselAnim.pause());
+    track.addEventListener('mouseleave', () => carouselAnim.play());
+
+    // PERF FIX: this animation used to run forever in the background even
+    // when the Services section was scrolled way out of view, burning CPU
+    // the whole time the page was open. Now it pauses off-screen and
+    // resumes only while actually visible.
+    const carouselContainer = document.querySelector('.carousel-container');
+    if (carouselContainer && 'IntersectionObserver' in window) {
+        const carouselObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    carouselAnim.play();
+                } else {
+                    carouselAnim.pause();
+                }
+            });
+        }, { threshold: 0.05 });
+        carouselObserver.observe(carouselContainer);
+    }
 }
+/* ===================== SERVICES SECTION END (JS) ===================== */
 
 // 5. Theme & Mobile Menu
 const toggleBtn = document.getElementById('theme-toggle');
@@ -96,7 +130,8 @@ if (menuToggle && navLinksContainer) {
 // GSAP ScrollTrigger
 if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
     gsap.registerPlugin(ScrollTrigger);
-    
+
+    /* ===================== ABOUT SECTION START (JS) ===================== */
     // Image Reveal
     if (document.querySelector("#about")) {
         gsap.from(".reveal-img", { 
@@ -121,6 +156,7 @@ if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
             scrollTrigger: { trigger: "#about", start: "top bottom", end: "bottom top", scrub: 1 }
         });
     }
+    /* ===================== ABOUT SECTION END (JS) ===================== */
 }
 
 // 7. Portfolio Filtering
